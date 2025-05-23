@@ -1,0 +1,33 @@
+version: "3.9"
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main
+    container_name: litellm
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./env.litellm:/app/.env
+    restart: unless-stopped
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:v0.6.10
+    container_name: open-webui
+    ports:
+      - "8080:3000"
+    volumes:
+      - open-webui-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  ollama-data:
+  open-webui-data:

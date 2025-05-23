@@ -1,0 +1,8 @@
+{
+  "default_model": "openai/gpt-3.5-turbo",
+  "routing_strategy": {
+    "code": "openai/gpt-4",
+    "fast": "ollama/mistral",
+    "fallback": ["ollama/mistral", "openai/gpt-3.5-turbo"]
+  }
+}
