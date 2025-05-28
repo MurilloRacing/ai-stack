@@ -33,7 +33,7 @@ SUPABASE_URL = "https://pvwwcnxaogcdjswctnqn.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB2d3djbnhhb2djZGpzd2N0bnFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg0NTUzNzEsImV4cCI6MjA2NDAzMTM3MX0.LRnn_DYBDIrrR6NxZxsjy29vLIHqptxiL0XkFcB51kk"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-ALLOWED_EXTENSIONS = {'pdf', 'yaml', 'yml', 'xlsx', 'md', 'png', 'jpg', 'jpeg', 'xml', 'html'}
+ALLOWED_EXTENSIONS = {'txt', 'pdf', 'yaml', 'yml', 'xlsx', 'md', 'png', 'jpg', 'jpeg', 'xml', 'html'}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -53,7 +53,9 @@ def upload_file():
         return jsonify({"error": "No selected file"}), 400
     if file and allowed_file(file.filename):
         try:
-            response = supabase.storage.from_('company-files').upload(file.filename, file, file_options={'upsert': True})
+            # Read the file contents into bytes
+            file_content = file.read()
+            response = supabase.storage.from_('company-files').upload(file.filename, file_content, file_options={'upsert': True})
             app.logger.info(f"File uploaded to Supabase: {file.filename} by user {auth.current_user()}")
             return jsonify({"message": f"File {file.filename} uploaded successfully"}), 200
         except Exception as e:
