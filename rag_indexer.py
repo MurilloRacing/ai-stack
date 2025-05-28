@@ -46,8 +46,12 @@ class RAGIndexer:
                     data = yaml.safe_load(f)
                     return json.dumps(data)
             elif ext == '.xlsx':
-                df = pd.read_excel(file_path)
-                return df.to_string()
+                try:
+                    df = pd.read_excel(file_path, engine="openpyxl")
+                    return df.to_string()
+                except Exception as e:
+                    print(f"Error reading {file_path}: {str(e)}")
+                    return ""
             elif ext == '.md':
                 with open(file_path, 'r') as f:
                     md_content = f.read()
@@ -76,30 +80,43 @@ class RAGIndexer:
         documents = []
         with tempfile.TemporaryDirectory() as temp_dir:
             # List files in Supabase bucket
-            response = self.supabase.storage.from_('company-files').list()
+            try:
+                response = self.supabase.storage.from_('company-files').list()
+                if not response:
+                    print("No files found in Supabase bucket 'company-files'.")
+                    return
+            except Exception as e:
+                print(f"Error listing files in Supabase bucket: {e}")
+                return
+
             for file_info in response:
                 filename = file_info['name']
                 # Download file to temp directory
                 file_path = os.path.join(temp_dir, filename)
-                file_data = self.supabase.storage.from_('company-files').download(filename)
-                with open(file_path, 'wb') as f:
-                    f.write(file_data)
                 try:
+                    file_data = self.supabase.storage.from_('company-files').download(filename)
+                    with open(file_path, 'wb') as f:
+                        f.write(file_data)
                     content = self.read_file(file_path)
-                    chunks = self.text_splitter.split_text(content)
-                    for i, chunk in enumerate(chunks):
-                        doc_id = f"{filename}_{i}"
-                        embedding = self.embedder.encode(chunk).tolist()
-                        metadata = {"file": filename, "path": f"company-files/{filename}", "chunk": i}
-                        self.collection.add(
-                            ids=[doc_id],
-                            documents=[chunk],
-                            embeddings=[embedding],
-                            metadatas=[metadata]
-                        )
-                        documents.append(chunk)
+                    if content:  # Only process if content was successfully read
+                        chunks = self.text_splitter.split_text(content)
+                        for i, chunk in enumerate(chunks):
+                            doc_id = f"{filename}_{i}"
+                            embedding = self.embedder.encode(chunk).tolist()
+                            metadata = {"file": filename, "path": f"company-files/{filename}", "chunk": i}
+                            self.collection.add(
+                                ids=[doc_id],
+                                documents=[chunk],
+                                embeddings=[embedding],
+                                metadatas=[metadata]
+                            )
+                            documents.append(chunk)
+                    else:
+                        print(f"Skipping indexing for {filename}: No content extracted.")
                 except Exception as e:
                     print(f"Error indexing {file_path}: {e}")
+                    continue
+
         self.corpus = documents
         # Only initialize BM25Okapi if there are documents
         if documents:
