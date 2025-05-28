@@ -100,9 +100,13 @@ class RAGIndexer:
                         documents.append(chunk)
                 except Exception as e:
                     print(f"Error indexing {file_path}: {e}")
-        tokenized_corpus = [doc.split() for doc in documents]
-        self.bm25 = BM25Okapi(tokenized_corpus)
         self.corpus = documents
+        # Only initialize BM25Okapi if there are documents
+        if documents:
+            tokenized_corpus = [doc.split() for doc in documents]
+            self.bm25 = BM25Okapi(tokenized_corpus)
+        else:
+            self.bm25 = None  # Set to None if no documents
 
     def query(self, query_text, top_k=3):
         cache_key = f"query:{query_text}"
@@ -116,20 +120,27 @@ class RAGIndexer:
             n_results=top_k
         )
 
-        tokenized_query = query_text.split()
-        bm25_scores = self.bm25.get_scores(tokenized_query)
-        bm25_results = sorted(
-            [(i, score) for i, score in enumerate(bm25_scores)],
-            key=lambda x: x[1],
-            reverse=True
-        )[:top_k]
-
         combined_results = {}
-        for i, (doc_id, dist) in enumerate(zip(vector_results['ids'][0], vector_results['distances'][0])):
-            combined_results[doc_id] = combined_results.get(doc_id, 0) + (1 / (i + 1))
-        for rank, (idx, score) in enumerate(bm25_results):
-            doc_id = f"{vector_results['metadatas'][0][idx]['file']}_{idx}"
-            combined_results[doc_id] = combined_results.get(doc_id, 0) + (1 / (rank + 1))
+        # Use vector search results
+        if vector_results['ids'][0]:  # Check if there are any vector results
+            for i, (doc_id, dist) in enumerate(zip(vector_results['ids'][0], vector_results['distances'][0])):
+                combined_results[doc_id] = combined_results.get(doc_id, 0) + (1 / (i + 1))
+
+        # Use BM25 search results if available
+        if self.bm25 and self.corpus:
+            tokenized_query = query_text.split()
+            bm25_scores = self.bm25.get_scores(tokenized_query)
+            bm25_results = sorted(
+                [(i, score) for i, score in enumerate(bm25_scores)],
+                key=lambda x: x[1],
+                reverse=True
+            )[:top_k]
+            for rank, (idx, score) in enumerate(bm25_results):
+                doc_id = f"{vector_results['metadatas'][0][idx]['file']}_{idx}"
+                combined_results[doc_id] = combined_results.get(doc_id, 0) + (1 / (rank + 1))
+
+        if not combined_results:
+            return []  # Return empty list if no results
 
         sorted_results = sorted(combined_results.items(), key=lambda x: x[1], reverse=True)[:top_k]
         final_results = []
