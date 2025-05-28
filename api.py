@@ -1,4 +1,5 @@
 import os
+import mimetypes
 from flask import Flask, request, jsonify
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -56,8 +57,18 @@ def upload_file():
         try:
             # Read the file contents into bytes
             file_content = file.read()
-            # Convert boolean to string for file_options
-            response = supabase.storage.from_('company-files').upload(file.filename, file_content, file_options={'upsert': 'true'})
+            # Determine the MIME type based on the file extension
+            mime_type, _ = mimetypes.guess_type(file.filename)
+            if not mime_type:
+                # Fallback for .xlsx if mimetypes fails
+                mime_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' if file.filename.endswith('.xlsx') else 'application/octet-stream'
+            file_options = {
+                'content-type': mime_type,
+                'upsert': 'true'
+            }
+            response = supabase.storage.from_('company-files').upload(
+                file.filename, file_content, file_options=file_options
+            )
             app.logger.info(f"File uploaded to Supabase: {file.filename} by user {auth.current_user()}")
             return jsonify({"message": f"File {file.filename} uploaded successfully"}), 200
         except Exception as e:
