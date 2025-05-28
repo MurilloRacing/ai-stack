@@ -1,1 +1,7 @@
-.env.litellm 
+venv/
+*.pyc
+__pycache__/
+nohup.out
+logs/
+index/
+chroma/
