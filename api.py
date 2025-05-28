@@ -55,7 +55,8 @@ def upload_file():
         try:
             # Read the file contents into bytes
             file_content = file.read()
-            response = supabase.storage.from_('company-files').upload(file.filename, file_content, file_options={'upsert': True})
+            # Convert boolean to string for file_options
+            response = supabase.storage.from_('company-files').upload(file.filename, file_content, file_options={'upsert': 'true'})
             app.logger.info(f"File uploaded to Supabase: {file.filename} by user {auth.current_user()}")
             return jsonify({"message": f"File {file.filename} uploaded successfully"}), 200
         except Exception as e:
