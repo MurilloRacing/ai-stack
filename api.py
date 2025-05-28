@@ -30,7 +30,7 @@ app.logger.addHandler(handler)
 
 # Supabase configuration
 SUPABASE_URL = "https://pvwwcnxaogcdjswctnqn.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB2d3djbnhhb2djZGpzd2N0bnFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg0NTUzNzEsImV4cCI6MjA2NDAzMTM3MX0.LRnn_DYBDIrrR6NxZxsjy29vLIHqptxiL0XkFcB51kk"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB2d3djbnhhb2djZGpzd2N0bnFuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0ODQ1NTM3MSwiZXhwIjoyMDY0MDMxMzcxfQ.iHfs94hDWWjw9mfu-bNcEyNj-eW2oKQBTjUHfGt4NvM"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 ALLOWED_EXTENSIONS = {'txt', 'pdf', 'yaml', 'yml', 'xlsx', 'md', 'png', 'jpg', 'jpeg', 'xml', 'html'}
