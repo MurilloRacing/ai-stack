@@ -1,5 +1,0 @@
-.env.litellm
-*.key
-*.pem
-*.log
-__pycache__/
