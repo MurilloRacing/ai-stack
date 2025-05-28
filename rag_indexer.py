@@ -1,5 +1,6 @@
 import os
 import tempfile
+import io
 import PyPDF2
 import yaml
 import pandas as pd
@@ -34,7 +35,7 @@ class RAGIndexer:
         self.corpus = []
         self.index_files()
 
-    def read_file(self, file_path):
+    def read_file(self, file_path, file_data=None):
         ext = os.path.splitext(file_path)[1].lower()
         try:
             if ext == '.pdf':
@@ -47,10 +48,18 @@ class RAGIndexer:
                     return json.dumps(data)
             elif ext == '.xlsx':
                 try:
-                    df = pd.read_excel(file_path, engine="openpyxl")
+                    # Try reading directly from the byte stream if provided
+                    if file_data is not None:
+                        print(f"📄 Attempting to read {file_path} directly from byte stream...")
+                        df = pd.read_excel(io.BytesIO(file_data), engine="openpyxl")
+                    else:
+                        print(f"📄 Attempting to read {file_path} from disk...")
+                        df = pd.read_excel(file_path, engine="openpyxl")
+                    preview = df.head().to_string()
+                    print(f"✅ Successfully read Excel file {file_path}. Preview:\n{preview}")
                     return df.to_string()
                 except Exception as e:
-                    print(f"Error reading {file_path}: {str(e)}")
+                    print(f"❌ Failed to read Excel file {file_path}: {str(e)}")
                     return ""
             elif ext == '.md':
                 with open(file_path, 'r') as f:
@@ -73,32 +82,38 @@ class RAGIndexer:
                 with open(file_path, 'r') as f:
                     return f.read()
         except Exception as e:
-            print(f"Error reading {file_path}: {e}")
+            print(f"❌ Error reading {file_path}: {e}")
             return ""
 
     def index_files(self):
         documents = []
         with tempfile.TemporaryDirectory() as temp_dir:
-            # List files in Supabase bucket
             try:
                 response = self.supabase.storage.from_('company-files').list()
                 if not response:
-                    print("No files found in Supabase bucket 'company-files'.")
+                    print("⚠️ No files found in Supabase bucket 'company-files'.")
                     return
             except Exception as e:
-                print(f"Error listing files in Supabase bucket: {e}")
+                print(f"❌ Error listing files in Supabase bucket: {e}")
                 return
 
             for file_info in response:
                 filename = file_info['name']
-                # Download file to temp directory
+                print(f"📄 Processing file: {filename}")
                 file_path = os.path.join(temp_dir, filename)
                 try:
                     file_data = self.supabase.storage.from_('company-files').download(filename)
+                    print(f"📥 Downloaded {filename}, size: {len(file_data)} bytes")
+                    # Write the file to disk for most formats
                     with open(file_path, 'wb') as f:
                         f.write(file_data)
-                    content = self.read_file(file_path)
-                    if content:  # Only process if content was successfully read
+                    print(f"💾 Wrote {filename} to temporary path: {file_path}")
+                    # For .xlsx files, try reading directly from byte stream to avoid disk write issues
+                    if filename.endswith('.xlsx'):
+                        content = self.read_file(file_path, file_data=file_data)
+                    else:
+                        content = self.read_file(file_path)
+                    if content:
                         chunks = self.text_splitter.split_text(content)
                         for i, chunk in enumerate(chunks):
                             doc_id = f"{filename}_{i}"
@@ -112,18 +127,17 @@ class RAGIndexer:
                             )
                             documents.append(chunk)
                     else:
-                        print(f"Skipping indexing for {filename}: No content extracted.")
+                        print(f"⚠️ Skipping {filename}: No content extracted.")
                 except Exception as e:
-                    print(f"Error indexing {file_path}: {e}")
+                    print(f"❌ Error indexing {file_path}: {e}")
                     continue
 
         self.corpus = documents
-        # Only initialize BM25Okapi if there are documents
         if documents:
             tokenized_corpus = [doc.split() for doc in documents]
             self.bm25 = BM25Okapi(tokenized_corpus)
         else:
-            self.bm25 = None  # Set to None if no documents
+            self.bm25 = None
 
     def query(self, query_text, top_k=3):
         cache_key = f"query:{query_text}"
@@ -138,12 +152,10 @@ class RAGIndexer:
         )
 
         combined_results = {}
-        # Use vector search results
-        if vector_results['ids'][0]:  # Check if there are any vector results
+        if vector_results['ids'][0]:
             for i, (doc_id, dist) in enumerate(zip(vector_results['ids'][0], vector_results['distances'][0])):
                 combined_results[doc_id] = combined_results.get(doc_id, 0) + (1 / (i + 1))
 
-        # Use BM25 search results if available
         if self.bm25 and self.corpus:
             tokenized_query = query_text.split()
             bm25_scores = self.bm25.get_scores(tokenized_query)
@@ -157,7 +169,7 @@ class RAGIndexer:
                 combined_results[doc_id] = combined_results.get(doc_id, 0) + (1 / (rank + 1))
 
         if not combined_results:
-            return []  # Return empty list if no results
+            return []
 
         sorted_results = sorted(combined_results.items(), key=lambda x: x[1], reverse=True)[:top_k]
         final_results = []
