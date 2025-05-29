@@ -1,6 +1,10 @@
 import os
 import tempfile
 import io
+import json
+from typing import List, Dict, Any, Optional, Union
+
+# Third-party imports
 import PyPDF2
 import yaml
 import pandas as pd
@@ -10,32 +14,49 @@ from rank_bm25 import BM25Okapi
 import chromadb
 from chromadb.config import Settings
 import redis
-import json
 import markdown
 from docx import Document
 from PIL import Image
 import pytesseract
 from lxml import etree
 from bs4 import BeautifulSoup
-from supabase import create_client, Client
+from supabase import create_client
 
 class RAGIndexer:
-    def __init__(self, index_dir="/root/flask_rag_api/chroma"):
-        self.index_dir = index_dir
-        self.text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-        self.embedder = SentenceTransformer('all-MiniLM-L6-v2')
-        self.chroma_client = chromadb.Client(Settings(persist_directory=index_dir))
-        self.collection = self.chroma_client.get_or_create_collection("documents")
-        self.redis_client = redis.Redis(host='localhost', port=6379, db=0)
-        self.supabase = create_client(
+    """A class for indexing and querying documents using a RAG pipeline with Supabase storage."""
+    
+    def __init__(self, index_dir: str = "/root/flask_rag_api/chroma") -> None:
+        """Initialize the RAGIndexer with storage and indexing configurations.
+
+        Args:
+            index_dir (str): Directory for ChromaDB persistence. Defaults to "/root/flask_rag_api/chroma".
+        """
+        self.index_dir: str = index_dir
+        self.text_splitter: RecursiveCharacterTextSplitter = RecursiveCharacterTextSplitter(
+            chunk_size=500, chunk_overlap=50
+        )
+        self.embedder: SentenceTransformer = SentenceTransformer('all-MiniLM-L6-v2')
+        self.chroma_client: chromadb.Client = chromadb.Client(Settings(persist_directory=index_dir))
+        self.collection: chromadb.api.models.Collection = self.chroma_client.get_or_create_collection("documents")
+        self.redis_client: redis.Redis = redis.Redis(host='localhost', port=6379, db=0)
+        self.supabase: Any = create_client(
             "https://pvwwcnxaogcdjswctnqn.supabase.co",
             "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB2d3djbnhhb2djZGpzd2N0bnFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg0NTUzNzEsImV4cCI6MjA2NDAzMTM3MX0.LRnn_DYBDIrrR6NxZxsjy29vLIHqptxiL0XkFcB51kk"
         )
-        self.bm25 = None
-        self.corpus = []
+        self.bm25: Optional[BM25Okapi] = None
+        self.corpus: List[str] = []
         self.index_files()
 
-    def read_file(self, file_path, file_data=None):
+    def read_file(self, file_path: str, file_data: Optional[bytes] = None) -> str:
+        """Read and extract content from a file based on its extension.
+
+        Args:
+            file_path (str): Path to the file.
+            file_data (Optional[bytes]): Optional byte data for direct reading (e.g., for Excel files).
+
+        Returns:
+            str: Extracted content from the file, or empty string if extraction fails.
+        """
         ext = os.path.splitext(file_path)[1].lower()
         try:
             if ext == '.pdf':
@@ -86,7 +107,8 @@ class RAGIndexer:
             print(f"❌ Error reading {file_path}: {e}")
             return ""
 
-    def index_files(self):
+    def index_files(self) -> None:
+        """Index files from Supabase bucket and store embeddings in ChromaDB."""
         documents = []
         with tempfile.TemporaryDirectory() as temp_dir:
             try:
@@ -138,7 +160,16 @@ class RAGIndexer:
         else:
             self.bm25 = None
 
-    def query(self, query_text, top_k=3):
+    def query(self, query_text: str, top_k: int = 3) -> List[Dict[str, str]]:
+        """Query indexed documents using a combination of vector and BM25 search.
+
+        Args:
+            query_text (str): The query text to search for.
+            top_k (int): Number of top results to return. Defaults to 3.
+
+        Returns:
+            List[Dict[str, str]]: List of dictionaries containing file, path, and content of matching documents.
+        """
         cache_key = f"query:{query_text}"
         cached = self.redis_client.get(cache_key)
         if cached:
