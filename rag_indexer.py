@@ -55,9 +55,10 @@ class RAGIndexer:
                     else:
                         print(f"📄 Attempting to read {file_path} from disk...")
                         df = pd.read_excel(file_path, engine="openpyxl")
-                    preview = df.head().to_string()
-                    print(f"✅ Successfully read Excel file {file_path}. Preview:\n{preview}")
-                    return df.to_string()
+                    # Convert DataFrame to a cleaner string format for search
+                    content = " ".join(f"{col}: {val}" for _, row in df.iterrows() for col, val in row.items())
+                    print(f"✅ Successfully read Excel file {file_path}. Content:\n{content}")
+                    return content
                 except Exception as e:
                     print(f"❌ Failed to read Excel file {file_path}: {str(e)}")
                     return ""
@@ -104,11 +105,9 @@ class RAGIndexer:
                 try:
                     file_data = self.supabase.storage.from_('company-files').download(filename)
                     print(f"📥 Downloaded {filename}, size: {len(file_data)} bytes")
-                    # Write the file to disk for most formats
                     with open(file_path, 'wb') as f:
                         f.write(file_data)
                     print(f"💾 Wrote {filename} to temporary path: {file_path}")
-                    # For .xlsx files, try reading directly from byte stream to avoid disk write issues
                     if filename.endswith('.xlsx'):
                         content = self.read_file(file_path, file_data=file_data)
                     else:
@@ -153,7 +152,11 @@ class RAGIndexer:
 
         combined_results = {}
         if vector_results['ids'][0]:
+            print("📊 Vector Search Results:")
             for i, (doc_id, dist) in enumerate(zip(vector_results['ids'][0], vector_results['distances'][0])):
+                file_name = vector_results['metadatas'][0][i]['file']
+                content = vector_results['documents'][0][i]
+                print(f"  - {doc_id} (file: {file_name}, distance: {dist:.4f}): {content[:50]}...")
                 combined_results[doc_id] = combined_results.get(doc_id, 0) + (1 / (i + 1))
 
         if self.bm25 and self.corpus:
@@ -164,14 +167,22 @@ class RAGIndexer:
                 key=lambda x: x[1],
                 reverse=True
             )[:top_k]
+            print("📊 BM25 Search Results:")
             for rank, (idx, score) in enumerate(bm25_results):
                 doc_id = f"{vector_results['metadatas'][0][idx]['file']}_{idx}"
+                content = self.corpus[idx]
+                print(f"  - {doc_id} (score: {score:.4f}): {content[:50]}...")
                 combined_results[doc_id] = combined_results.get(doc_id, 0) + (1 / (rank + 1))
 
         if not combined_results:
+            print("⚠️ No results found for query.")
             return []
 
         sorted_results = sorted(combined_results.items(), key=lambda x: x[1], reverse=True)[:top_k]
+        print("📊 Final Combined Results (Top 3):")
+        for doc_id, score in sorted_results:
+            print(f"  - {doc_id} (combined score: {score:.4f})")
+
         final_results = []
         for doc_id, _ in sorted_results:
             for i, d_id in enumerate(vector_results['ids'][0]):
