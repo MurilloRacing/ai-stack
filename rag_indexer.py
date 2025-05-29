@@ -181,8 +181,10 @@ class RAGIndexer:
             n_results=top_k
         )
 
-        combined_results = {}
-        if vector_results['ids'][0]:
+        combined_results: Dict[str, float] = {}
+        
+        # Handle vector search results
+        if vector_results['ids'] and vector_results['ids'][0]:
             print("📊 Vector Search Results:")
             for i, (doc_id, dist) in enumerate(zip(vector_results['ids'][0], vector_results['distances'][0])):
                 file_name = vector_results['metadatas'][0][i]['file']
@@ -190,6 +192,7 @@ class RAGIndexer:
                 print(f"  - {doc_id} (file: {file_name}, distance: {dist:.4f}): {content[:50]}...")
                 combined_results[doc_id] = combined_results.get(doc_id, 0) + (1 / (i + 1))
 
+        # Handle BM25 search results
         if self.bm25 and self.corpus:
             tokenized_query = query_text.split()
             bm25_scores = self.bm25.get_scores(tokenized_query)
@@ -198,40 +201,45 @@ class RAGIndexer:
                 key=lambda x: x[1],
                 reverse=True
             )[:top_k]
+            
             print("📊 BM25 Search Results:")
             for rank, (idx, score) in enumerate(bm25_results):
-                # Map corpus index to doc_id from vector results
-                doc_id = None
-                for i, v_id in enumerate(vector_results['ids'][0]):
-                    if v_id == f"{self.corpus[idx].split('_')[0]}_{idx}":
-                        doc_id = v_id
-                        break
-                if doc_id:
+                try:
+                    # Generate document ID using corpus content
                     content = self.corpus[idx]
-                    print(f"  - {doc_id} (score: {score:.4f}): {content[:50]}...")
-                    combined_results[doc_id] = combined_results.get(doc_id, 0) + (1 / (rank + 1))
-                else:
-                    print(f"  - Skipping corpus index {idx}: Not in vector search results.")
+                    # Look for matching content in vector results
+                    for i, doc_content in enumerate(vector_results['documents'][0]):
+                        if content == doc_content:
+                            doc_id = vector_results['ids'][0][i]
+                            print(f"  - {doc_id} (score: {score:.4f}): {content[:50]}...")
+                            combined_results[doc_id] = combined_results.get(doc_id, 0) + (1 / (rank + 1))
+                            break
+                except (IndexError, KeyError) as e:
+                    print(f"⚠️ Error processing BM25 result at index {idx}: {str(e)}")
+                    continue
 
         if not combined_results:
             print("⚠️ No results found for query.")
             return []
 
+        # Process final results
         sorted_results = sorted(combined_results.items(), key=lambda x: x[1], reverse=True)[:top_k]
         print("📊 Final Combined Results (Top 3):")
         for doc_id, score in sorted_results:
             print(f"  - {doc_id} (combined score: {score:.4f})")
 
-        final_results = []
+        final_results: List[Dict[str, str]] = []
         for doc_id, _ in sorted_results:
-            for i, d_id in enumerate(vector_results['ids'][0]):
-                if d_id == doc_id:
-                    final_results.append({
-                        "file": vector_results['metadatas'][0][i]['file'],
-                        "path": vector_results['metadatas'][0][i]['path'],
-                        "content": vector_results['documents'][0][i]
-                    })
-                    break
+            try:
+                idx = vector_results['ids'][0].index(doc_id)
+                final_results.append({
+                    "file": vector_results['metadatas'][0][idx]['file'],
+                    "path": vector_results['metadatas'][0][idx]['path'],
+                    "content": vector_results['documents'][0][idx]
+                })
+            except (ValueError, IndexError) as e:
+                print(f"⚠️ Error retrieving results for doc_id {doc_id}: {str(e)}")
+                continue
 
         self.redis_client.setex(cache_key, 3600, json.dumps(final_results))
         return final_results
