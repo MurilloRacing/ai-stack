@@ -169,10 +169,18 @@ class RAGIndexer:
             )[:top_k]
             print("📊 BM25 Search Results:")
             for rank, (idx, score) in enumerate(bm25_results):
-                doc_id = f"{vector_results['metadatas'][0][idx]['file']}_{idx}"
-                content = self.corpus[idx]
-                print(f"  - {doc_id} (score: {score:.4f}): {content[:50]}...")
-                combined_results[doc_id] = combined_results.get(doc_id, 0) + (1 / (rank + 1))
+                # Map corpus index to doc_id from vector results
+                doc_id = None
+                for i, v_id in enumerate(vector_results['ids'][0]):
+                    if v_id == f"{self.corpus[idx].split('_')[0]}_{idx}":
+                        doc_id = v_id
+                        break
+                if doc_id:
+                    content = self.corpus[idx]
+                    print(f"  - {doc_id} (score: {score:.4f}): {content[:50]}...")
+                    combined_results[doc_id] = combined_results.get(doc_id, 0) + (1 / (rank + 1))
+                else:
+                    print(f"  - Skipping corpus index {idx}: Not in vector search results.")
 
         if not combined_results:
             print("⚠️ No results found for query.")
